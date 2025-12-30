@@ -16,6 +16,7 @@ from torch.distributed.elastic.multiprocessing.errors import record
 import torchtitan.protocols.train_spec as train_spec_module
 from torchtitan.components.checkpoint import CheckpointManager
 from torchtitan.components.dataloader import DataloaderExhaustedError
+from torchtitan.components.dispersion import DispersionLossWrapper
 from torchtitan.components.ft import FTManager, maybe_semi_sync_training
 from torchtitan.components.loss import rescale_accumulated_loss
 from torchtitan.components.metrics import (
@@ -265,6 +266,41 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
 
         self.ft_manager.maybe_set_all_reduce_hook(self.model_parts)
 
+        # Wrap loss function with dispersion if configured
+        if hasattr(job_config, 'dispersion') and job_config.dispersion.variant is not None:
+            logger.info(
+                f"[Dispersion] Wrapping loss: variant={job_config.dispersion.variant}, "
+                f"coeff={job_config.dispersion.dispersion_coeff}, "
+                f"loc={job_config.dispersion.dispersion_loc}"
+            )
+            self.loss_fn = DispersionLossWrapper(
+                base_loss_fn=self.loss_fn,
+                variant=job_config.dispersion.variant,
+                dispersion_coeff=job_config.dispersion.dispersion_coeff,
+                dispersion_loc=job_config.dispersion.dispersion_loc,
+                tau_l2=job_config.dispersion.tau_l2,
+                tau_cos=job_config.dispersion.tau_cos,
+            )
+            
+            # Register hooks to capture hidden states
+            self._dispersion_hooks = []
+            model = self.model_parts[0]
+            
+            def make_hook_fn():
+                def hook_fn(module, input, output):
+                    if isinstance(self.loss_fn, DispersionLossWrapper):
+                        if self.loss_fn.hidden_states is None:
+                            self.loss_fn.hidden_states = []
+                        self.loss_fn.hidden_states.append(output.detach())
+                return hook_fn
+            
+            # Register hooks on transformer layers
+            if hasattr(model, 'layers'):
+                for layer in model.layers.values():
+                    hook = layer.register_forward_hook(make_hook_fn())
+                    self._dispersion_hooks.append(hook)
+                logger.info(f"[Dispersion] Registered {len(self._dispersion_hooks)} hooks")
+
         # initialize device memory monitor and get peak flops for MFU calculation
         device_memory_monitor = self.metrics_processor.device_memory_monitor
         gpu_peak_flops = utils.get_peak_flops(device_memory_monitor.device_name)
@@ -484,9 +520,17 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             # Non-PP forward / backward
             with self.train_context(optional_context_parallel_ctx):
                 assert len(model_parts) == 1
+                # Clear dispersion hidden states before forward pass
+                if isinstance(self.loss_fn, DispersionLossWrapper):
+                    self.loss_fn.hidden_states = None
+                
                 with self.maybe_enable_amp:
                     pred = model_parts[0](inputs, **extra_inputs, **extra_args)
-                    loss = self.loss_fn(pred, labels)
+                    # Pass model and is_training to dispersion-aware loss
+                    if isinstance(self.loss_fn, DispersionLossWrapper):
+                        loss = self.loss_fn(pred, labels, model=model_parts[0], is_training=True)
+                    else:
+                        loss = self.loss_fn(pred, labels)
                 # need to free pred before bwd to avoid peaking memory
                 del pred
                 loss.backward()
@@ -554,6 +598,12 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             "n_tokens_seen": global_ntokens_seen,
             "lr": lr,
         }
+        
+        # Log dispersion metrics if using DispersionLossWrapper
+        if isinstance(self.loss_fn, DispersionLossWrapper):
+            disp_metrics = self.loss_fn.get_metrics()
+            extra_metrics.update(disp_metrics)
+        
         self.metrics_processor.log(
             self.step,
             global_avg_loss,

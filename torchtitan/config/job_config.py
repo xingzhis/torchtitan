@@ -881,6 +881,25 @@ class Validation:
 
 
 @dataclass
+class DispersionConfig:
+    """Configuration for dispersion loss"""
+    variant: str | None = None
+    """Dispersion variant name (None to disable). Options: decorrelation, l2_repel, angular_spread, orthogonalization, perplexity_entropy"""
+    
+    dispersion_coeff: float = 1.0
+    """Weight for dispersion loss"""
+    
+    dispersion_loc: str = "all"
+    """Location for dispersion computation: 'last' (final layer only) or 'all' (average across layers)"""
+    
+    tau_l2: float = 0.5
+    """Temperature parameter for l2_repel variant"""
+    
+    tau_cos: float = 0.5
+    """Temperature parameter for angular_spread variant"""
+
+
+@dataclass
 class JobConfig:
     """
     Default container for training configuration.
@@ -905,6 +924,7 @@ class JobConfig:
     fault_tolerance: FaultTolerance = field(default_factory=FaultTolerance)
     experimental: Experimental = field(default_factory=Experimental)
     validation: Validation = field(default_factory=Validation)
+    dispersion: DispersionConfig = field(default_factory=DispersionConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
