@@ -526,9 +526,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 
                 with self.maybe_enable_amp:
                     pred = model_parts[0](inputs, **extra_inputs, **extra_args)
-                    # Pass model and is_training to dispersion-aware loss
+                    # Pass is_training to dispersion-aware loss
                     if isinstance(self.loss_fn, DispersionLossWrapper):
-                        loss = self.loss_fn(pred, labels, model=model_parts[0], is_training=True)
+                        loss = self.loss_fn(pred, labels, is_training=True)
                     else:
                         loss = self.loss_fn(pred, labels)
                 # need to free pred before bwd to avoid peaking memory
