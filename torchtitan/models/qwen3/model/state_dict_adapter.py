@@ -105,6 +105,9 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
                 if key not in to_hf_map:
                     continue
                 new_key = to_hf_map[key]
+                # Skip lm_head.weight if weight tying is enabled (HF uses tied weights)
+                if new_key == "lm_head.weight" and self.model_args.enable_weight_tying:
+                    continue
                 hf_state_dict[new_key] = value
 
         return hf_state_dict
@@ -160,7 +163,16 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
                 state_dict[new_key] = value
 
             else:
-                new_key = self.from_hf_map[key]
-                state_dict[new_key] = value
+                new_key = self.from_hf_map.get(key)
+                if new_key is not None:
+                    state_dict[new_key] = value
+
+        # Handle weight tying: if lm_head.weight is missing (due to weight tying),
+        # use tok_embeddings.weight for output.weight
+        if "output.weight" not in state_dict and "tok_embeddings.weight" in state_dict:
+            if self.model_args.enable_weight_tying:
+                # output.weight will be tied to tok_embeddings.weight in parallelize
+                # We copy the weight here for the checkpoint loader
+                state_dict["output.weight"] = state_dict["tok_embeddings.weight"]
 
         return state_dict
