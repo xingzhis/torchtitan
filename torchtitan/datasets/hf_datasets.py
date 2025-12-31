@@ -31,6 +31,16 @@ def _process_c4_text(sample: dict[str, Any]) -> str:
     return sample["text"]
 
 
+def _load_wikitext_dataset(dataset_path: str, split: str):
+    """Load WikiText dataset with specified split."""
+    return load_dataset(dataset_path, name="wikitext-103-raw-v1", split=split, streaming=True)
+
+
+def _process_wikitext_text(sample: dict[str, Any]) -> str:
+    """Process WikiText dataset sample text."""
+    return sample["text"]
+
+
 # Add your dataset here - more information at docs/datasets.md
 DATASETS = {
     "c4": DatasetConfig(
@@ -47,6 +57,21 @@ DATASETS = {
         path="allenai/c4",
         loader=partial(_load_c4_dataset, split="validation"),
         sample_processor=_process_c4_text,
+    ),
+    "wikitext": DatasetConfig(
+        path="Salesforce/wikitext",
+        loader=partial(_load_wikitext_dataset, split="train"),
+        sample_processor=_process_wikitext_text,
+    ),
+    "wikitext_validation": DatasetConfig(
+        path="Salesforce/wikitext",
+        loader=partial(_load_wikitext_dataset, split="validation"),
+        sample_processor=_process_wikitext_text,
+    ),
+    "wikitext_test": DatasetConfig(
+        path="Salesforce/wikitext",
+        loader=partial(_load_wikitext_dataset, split="test"),
+        sample_processor=_process_wikitext_text,
     ),
 }
 
