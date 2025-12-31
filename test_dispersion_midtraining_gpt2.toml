@@ -1,0 +1,84 @@
+[job]
+dump_folder = "./outputs"
+description = "GPT-2 124M training with dispersion loss"
+
+[profiling]
+enable_profiling = false
+save_traces_folder = "profile_trace"
+profile_freq = 100
+
+[metrics]
+log_freq = 1
+enable_tensorboard = false
+enable_wandb = true
+save_tb_folder = "tb"
+
+[model]
+name = "gpt2"
+flavor = "124M"
+# hf_assets_path = "./assets/hf/gpt2"  # Optional: for loading pretrained weights
+
+[optimizer]
+name = "AdamW"
+lr = 5e-4  # Base LR (matching old code default, scaled by sqrt(world_size) in old code)
+weight_decay = 0.1  # Matching old code
+beta1 = 0.9  # Matching old code
+beta2 = 0.95  # Matching old code
+eps = 1e-8  # Matching old code
+
+[lr_scheduler]
+warmup_steps = 2000  # Matching old code
+decay_type = "cosine"  # Matching old code (lr_scheduler_type="cosine")
+# Note: old code uses cosine decay, min_lr_factor defaults to 0.0
+
+[training]
+local_batch_size = 16  # per_device_train_batch_size from old code (default)
+global_batch_size = 128  # 16 * 8 (matching per_device * gradient_accumulation_steps)
+# Note: old code uses per_device_train_batch_size=16, gradient_accumulation_steps=8
+# Effective batch per device = 16 * 8 = 128
+# With world_size=1: tokens/step = 16 * 1024 * 8 * 1 = 131,072
+# For 200M tokens: 200,000,000 / 131,072 = 1,525 steps
+steps = 1525  # 200M tokens / (16 * 8 * 1024) = 1,525 steps (for world_size=1)
+seq_len = 1024  # GPT-2 max_seq_len
+max_norm = 1.0  # grad norm clipping (matching old code)
+dataset = "wikitext"
+seed = 1  # Matching old code default
+
+[parallelism]
+data_parallel_replicate_degree = 1
+data_parallel_shard_degree = -1
+fsdp_reshard_after_forward = "default" # default / never / always
+tensor_parallel_degree = 1
+context_parallel_degree = 1
+
+[checkpoint]
+enable = true
+folder = "checkpoint"
+interval = 500
+enable_first_step_checkpoint = true # for sanity check
+initial_load_path = "./assets/hf/gpt2"  # Uncomment to load pretrained GPT-2
+initial_load_in_hf = true
+initial_load_model_only = true
+last_save_model_only = false
+export_dtype = "float16"
+async_mode = "async" # ["disabled", "async", "async_with_pinned_mem"]
+
+[activation_checkpoint]
+mode = "selective"  # ["none", "selective", "full"]
+selective_ac_option = "op"  # "int" = ac every positive int layer or 'op', ac based on ops policy
+
+[compile]
+enable=false
+components = ["model", "loss"]
+
+[quantize.linear.float8]
+enable_fsdp_float8_all_gather = false
+precompute_float8_dynamic_scale_for_fsdp = false
+filter_fqns = ["output"]
+
+[dispersion]
+variant = "l2_repel"
+dispersion_coeff = 5.0
+dispersion_loc = "all"
+tau_l2 = 0.5
+tau_cos = 0.5

@@ -46,22 +46,21 @@ def test_official_converter_integration():
         dcp_checkpoint_dir.mkdir()
         hf_export_dir.mkdir()
         
-        print(f"\n1. Creating fake HuggingFace checkpoint...")
-        # Create a minimal GPT-2 checkpoint in HF format
-        model_args = gpt2_args[model_flavor]
-        model = GPT2(model_args)
-        model.init_weights()
-        
-        # Get the adapter to convert to HF format
-        from torchtitan.models.gpt2 import GPT2StateDictAdapter
-        adapter = GPT2StateDictAdapter(model_args, None)
-        hf_state_dict = adapter.to_hf(model.state_dict())
-        
-        # Save as safetensors (simulating HF checkpoint)
-        # Note: This is simplified - real HF checkpoints use safetensors format
-        # For testing, we'll save as pytorch file which HuggingFaceStorageReader can handle
-        torch.save(hf_state_dict, hf_checkpoint_dir / "model.safetensors")
-        print(f"✓ Saved fake HF checkpoint to {hf_checkpoint_dir}")
+        print(f"\n1. Using existing HuggingFace checkpoint...")
+        # Use the actual downloaded GPT-2 checkpoint
+        existing_checkpoint = Path(__file__).parent.parent.parent / "assets" / "hf" / "gpt2"
+        if not existing_checkpoint.exists():
+            print(f"❌ GPT-2 checkpoint not found at {existing_checkpoint}")
+            return False
+
+        # Copy the checkpoint files
+        import shutil
+        for file_path in existing_checkpoint.glob("*"):
+            if file_path.is_file():
+                shutil.copy2(file_path, hf_checkpoint_dir / file_path.name)
+                print(f"  Copied {file_path.name}")
+
+        print(f"✓ Using existing HF checkpoint from {existing_checkpoint}")
         
         print(f"\n2. Testing convert_from_hf (HF → TorchTitan DCP)...")
         try:
@@ -138,4 +137,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

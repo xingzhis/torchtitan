@@ -60,18 +60,18 @@ def test_weight_transpose():
     
     tt_state = {"layers.0.attn.c_attn.weight": dummy_weight}
     
-    # Convert to HF (should transpose)
+    # Convert to HF (should transpose and use GPT-2 format)
     hf_state = adapter.to_hf(tt_state)
-    hf_weight = hf_state["transformer.h.0.attn.c_attn.weight"]
-    
+    hf_weight = hf_state["h.0.attn.c_attn.weight"]  # GPT-2 format without transformer. prefix
+
     # Check that it was transposed
-    assert hf_weight.shape == (2304, 768), f"Expected (2304, 768), got {hf_weight.shape}"
+    assert hf_weight.shape == (768, 2304), f"Expected (768, 2304), got {hf_weight.shape}"  # Conv1D format (in, out)
     assert torch.allclose(hf_weight, dummy_weight.t()), "Weight not correctly transposed"
-    
+
     # Convert back (should transpose again)
     tt_state_restored = adapter.from_hf(hf_state)
     tt_weight_restored = tt_state_restored["layers.0.attn.c_attn.weight"]
-    
+
     assert tt_weight_restored.shape == (768, 2304), f"Expected (768, 2304), got {tt_weight_restored.shape}"
     assert torch.allclose(tt_weight_restored, dummy_weight), "Weight not correctly restored"
     
@@ -92,7 +92,7 @@ def test_bias_not_transposed():
     
     # Convert to HF (should NOT transpose)
     hf_state = adapter.to_hf(tt_state)
-    hf_bias = hf_state["transformer.h.0.attn.c_attn.bias"]
+    hf_bias = hf_state["h.0.attn.c_attn.bias"]  # GPT-2 format
     
     assert hf_bias.shape == dummy_bias.shape, f"Bias shape changed: {hf_bias.shape} vs {dummy_bias.shape}"
     assert torch.allclose(hf_bias, dummy_bias), "Bias values changed"
@@ -129,5 +129,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

@@ -27,15 +27,15 @@ def test_roundtrip_conversion():
     hf_state = adapter.to_hf(original_state)
     print(f"✓ HuggingFace state dict: {len(hf_state)} keys")
     
-    # Verify we have the expected HF keys
-    expected_hf_keys = ["transformer.wte.weight", "transformer.wpe.weight", "lm_head.weight"]
+    # Verify we have the expected HF keys (GPT-2 format without transformer. prefix)
+    expected_hf_keys = ["wte.weight", "wpe.weight", "lm_head.weight"]
     for key in expected_hf_keys:
         assert key in hf_state, f"Missing expected HF key: {key}"
     print(f"✓ All expected HF keys present")
-    
-    # Verify weight tying: transformer.wte.weight and lm_head.weight should be identical
-    if torch.allclose(hf_state["transformer.wte.weight"], hf_state["lm_head.weight"]):
-        print("✓ Weight tying preserved (transformer.wte.weight == lm_head.weight)")
+
+    # Verify weight tying: wte.weight and lm_head.weight should be identical
+    if torch.allclose(hf_state["wte.weight"], hf_state["lm_head.weight"]):
+        print("✓ Weight tying preserved (wte.weight == lm_head.weight)")
     else:
         print("⚠️  Weight tying NOT preserved!")
         return False
@@ -134,21 +134,21 @@ def test_export_creates_valid_hf_structure():
     
     # Check shapes
     print("\n3. Checking parameter shapes...")
-    
-    # Embeddings
-    assert hf_state["transformer.wte.weight"].shape == (model_args.vocab_size, model_args.dim)
-    assert hf_state["transformer.wpe.weight"].shape == (model_args.max_seq_len, model_args.dim)
+
+    # Embeddings (GPT-2 format without transformer. prefix)
+    assert hf_state["wte.weight"].shape == (model_args.vocab_size, model_args.dim)
+    assert hf_state["wpe.weight"].shape == (model_args.max_seq_len, model_args.dim)
     print("✓ Embedding shapes correct")
-    
+
     # Attention weights (Conv1D format: in_features, out_features)
-    c_attn_shape = hf_state["transformer.h.0.attn.c_attn.weight"].shape
+    c_attn_shape = hf_state["h.0.attn.c_attn.weight"].shape
     expected_c_attn = (model_args.dim, model_args.dim * 3)  # Conv1D format (in, out)
     assert c_attn_shape == expected_c_attn, \
         f"c_attn shape mismatch: {c_attn_shape} != {expected_c_attn}"
     print("✓ Attention weight shapes correct (Conv1D format)")
-    
+
     # MLP weights (Conv1D format)
-    c_fc_shape = hf_state["transformer.h.0.mlp.c_fc.weight"].shape
+    c_fc_shape = hf_state["h.0.mlp.c_fc.weight"].shape
     expected_c_fc = (model_args.dim, model_args.dim * 4)  # Conv1D format (in, out)
     assert c_fc_shape == expected_c_fc, \
         f"c_fc shape mismatch: {c_fc_shape} != {expected_c_fc}"
