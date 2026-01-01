@@ -35,28 +35,30 @@ class GPT2StateDictAdapter(StateDictAdapter):
         self.hf_assets_path = hf_assets_path
         
         # Mapping from HuggingFace keys to torchtitan keys
+        # Note: HF GPT-2 checkpoint keys don't have 'transformer.' prefix
         self.from_hf_map = {
             # Embeddings
-            "transformer.wte.weight": "wte.weight",
-            "transformer.wpe.weight": "wpe.weight",
+            "wte.weight": "wte.weight",
+            "wpe.weight": "wpe.weight",
             # Final layernorm
-            "transformer.ln_f.weight": "ln_f.weight",
-            "transformer.ln_f.bias": "ln_f.bias",
+            "ln_f.weight": "ln_f.weight",
+            "ln_f.bias": "ln_f.bias",
             # LM head (weight tied with wte, so map to same location)
             "lm_head.weight": "wte.weight",  # Weight tying
             # Layer-specific mappings (using {} as placeholder for layer number)
-            "transformer.h.{}.ln_1.weight": "layers.{}.ln_1.weight",
-            "transformer.h.{}.ln_1.bias": "layers.{}.ln_1.bias",
-            "transformer.h.{}.attn.c_attn.weight": "layers.{}.attn.c_attn.weight",
-            "transformer.h.{}.attn.c_attn.bias": "layers.{}.attn.c_attn.bias",
-            "transformer.h.{}.attn.c_proj.weight": "layers.{}.attn.c_proj.weight",
-            "transformer.h.{}.attn.c_proj.bias": "layers.{}.attn.c_proj.bias",
-            "transformer.h.{}.ln_2.weight": "layers.{}.ln_2.weight",
-            "transformer.h.{}.ln_2.bias": "layers.{}.ln_2.bias",
-            "transformer.h.{}.mlp.c_fc.weight": "layers.{}.mlp.c_fc.weight",
-            "transformer.h.{}.mlp.c_fc.bias": "layers.{}.mlp.c_fc.bias",
-            "transformer.h.{}.mlp.c_proj.weight": "layers.{}.mlp.c_proj.weight",
-            "transformer.h.{}.mlp.c_proj.bias": "layers.{}.mlp.c_proj.bias",
+            "h.{}.ln_1.weight": "layers.{}.ln_1.weight",
+            "h.{}.ln_1.bias": "layers.{}.ln_1.bias",
+            "h.{}.attn.c_attn.weight": "layers.{}.attn.c_attn.weight",
+            "h.{}.attn.c_attn.bias": "layers.{}.attn.c_attn.bias",
+            "h.{}.attn.c_proj.weight": "layers.{}.attn.c_proj.weight",
+            "h.{}.attn.c_proj.bias": "layers.{}.attn.c_proj.bias",
+            "h.{}.attn.bias": None,  # Causal mask buffer - skip loading
+            "h.{}.ln_2.weight": "layers.{}.ln_2.weight",
+            "h.{}.ln_2.bias": "layers.{}.ln_2.bias",
+            "h.{}.mlp.c_fc.weight": "layers.{}.mlp.c_fc.weight",
+            "h.{}.mlp.c_fc.bias": "layers.{}.mlp.c_fc.bias",
+            "h.{}.mlp.c_proj.weight": "layers.{}.mlp.c_proj.weight",
+            "h.{}.mlp.c_proj.bias": "layers.{}.mlp.c_proj.bias",
         }
     
     def _should_transpose(self, key: str) -> bool:
@@ -89,6 +91,9 @@ class GPT2StateDictAdapter(StateDictAdapter):
                 if abstract_key in to_hf_map:
                     hf_keys = to_hf_map[abstract_key]
                     for hf_key_template in hf_keys:
+                        # Skip if mapped to None (e.g., attn.bias buffer)
+                        if hf_key_template is None:
+                            continue
                         hf_key = hf_key_template.format(layer_num)
                         
                         # Transpose if needed (Conv1D in HF)
@@ -100,6 +105,10 @@ class GPT2StateDictAdapter(StateDictAdapter):
                 if key in to_hf_map:
                     hf_keys = to_hf_map[key]
                     for hf_key in hf_keys:
+                        # Skip lm_head.weight - HuggingFace GPT-2 uses weight tying
+                        # and doesn't store lm_head.weight separately
+                        if hf_key == "lm_head.weight":
+                            continue
                         hf_state_dict[hf_key] = value.clone()
         
         return hf_state_dict
@@ -109,13 +118,18 @@ class GPT2StateDictAdapter(StateDictAdapter):
         state_dict = {}
         
         for hf_key, value in hf_state_dict.items():
-            if "transformer.h." in hf_key:
+            if "h." in hf_key and "." in hf_key.split("h.")[1].split(".")[0]:
+                # This is a layer-specific key (h.{layer_num}.*)
                 # Extract layer number and create abstract key
                 abstract_key = re.sub(r"\.(\d+)\.", ".{}.", hf_key, count=1)
                 layer_num = re.search(r"h\.(\d+)\.", hf_key).group(1)
                 
                 if abstract_key in self.from_hf_map:
-                    tt_key = self.from_hf_map[abstract_key].format(layer_num)
+                    tt_key = self.from_hf_map[abstract_key]
+                    # Skip if mapped to None (e.g., attn.bias buffer)
+                    if tt_key is None:
+                        continue
+                    tt_key = tt_key.format(layer_num)
                     
                     # Transpose if needed (Conv1D in HF -> Linear in torchtitan)
                     if self._should_transpose(hf_key) and value.dim() == 2:
@@ -125,6 +139,9 @@ class GPT2StateDictAdapter(StateDictAdapter):
             else:
                 if hf_key in self.from_hf_map:
                     tt_key = self.from_hf_map[hf_key]
+                    # Skip if mapped to None
+                    if tt_key is None:
+                        continue
                     state_dict[tt_key] = value.clone()
         
         return state_dict

@@ -64,7 +64,6 @@ def parallelize_gpt2(
         apply_ac(
             model,
             job_config.activation_checkpoint,
-            layers=model.layers,
         )
     
     # torch.compile
