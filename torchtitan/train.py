@@ -291,7 +291,8 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                     if isinstance(self.loss_fn, DispersionLossWrapper):
                         if self.loss_fn.hidden_states is None:
                             self.loss_fn.hidden_states = []
-                        self.loss_fn.hidden_states.append(output.detach())
+                        # Keep gradient flow - do NOT detach hidden states
+                        self.loss_fn.hidden_states.append(output)
                 return hook_fn
             
             # Register hooks on transformer layers

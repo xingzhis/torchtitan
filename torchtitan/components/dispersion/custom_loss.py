@@ -60,12 +60,10 @@ class DispersionLossWrapper:
         if self.dispersion_loc == "last":
             return self.disp_loss_fn(hidden_states[-1])
         
-        # Average across all layers (skipping embedding at index 0)
+        # Average across all captured layers
+        # Note: hidden_states are transformer block outputs, NOT embeddings
         loss_values = []
-        assert len(hidden_states) > 1
         for idx, h in enumerate(hidden_states):
-            if idx == 0:
-                continue  # Skip embedding
             loss_values.append(self.disp_loss_fn(h))
         return torch.stack(loss_values).mean()
     

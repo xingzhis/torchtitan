@@ -77,8 +77,8 @@ precompute_float8_dynamic_scale_for_fsdp = false
 filter_fqns = ["output"]
 
 [dispersion]
-variant = "l2_repel"
-dispersion_coeff = 5.0
+variant = "decorrelation"  # Changed from l2_repel - better optimization
+dispersion_coeff = 1.0
 dispersion_loc = "all"
 tau_l2 = 0.5
 tau_cos = 0.5
