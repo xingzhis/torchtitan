@@ -50,6 +50,30 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
             "lm_head.weight": "output.weight",
         }
 
+    # HuggingFace permutation function (exact copy from their conversion script)
+    def _permute(self, w, n_heads_arg, dim1=None, dim2=None):
+        if dim1 is None:
+            dim1 = w.shape[0]
+        if dim2 is None:
+            dim2 = w.shape[1]
+        return (
+            w.view(n_heads_arg, dim1 // n_heads_arg // 2, 2, dim2)
+            .transpose(1, 2)
+            .reshape(dim1, dim2)
+            .clone()
+        )
+
+    def _reverse_permute(self, w, n_heads_arg, dim1=None, dim2=None):
+        if dim1 is None:
+            dim1 = w.shape[0]
+        if dim2 is None:
+            dim2 = w.shape[1]
+        return (
+            w.view(n_heads_arg, 2, dim1 // n_heads_arg // 2, dim2)
+            .transpose(1, 2)
+            .reshape(dim1, dim2)
+        )
+
     def to_hf(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         """
         1. Convert between the HF shape and the torchtitan shape.
@@ -57,6 +81,15 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
         """
         to_hf_map = {v: k for k, v in self.from_hf_map.items()}
         hf_state_dict = {}
+
+        n_heads = self.model_args.n_heads
+        n_kv_heads = (
+            self.model_args.n_kv_heads
+            if self.model_args.n_kv_heads is not None
+            else n_heads
+        )
+        dim = self.model_args.dim
+        head_dim = self.model_args.head_dim
 
         for key, value in state_dict.items():
             if "moe.experts" in key:
@@ -98,6 +131,14 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
                     continue
                 layer_num = re.search(r"\d+", key).group(0)
                 new_key = to_hf_map[abstract_key]
+
+                # We need to permute the weights in wq and wk layer in order to account for the difference between
+                # the native Llama and huggingface RoPE implementation.
+                if abstract_key == "layers.{}.attention.wq.weight":
+                    value = value
+                if abstract_key == "layers.{}.attention.wk.weight":
+                    value = value
+
                 new_key = new_key.format(layer_num)
                 hf_state_dict[new_key] = value
 
@@ -106,8 +147,9 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
                     continue
                 new_key = to_hf_map[key]
                 # Skip lm_head.weight if weight tying is enabled (HF uses tied weights)
-                if new_key == "lm_head.weight" and self.model_args.enable_weight_tying:
-                    continue
+                # XS272 FIX: Titan checkpoint has untied weights even if config says tied. Force save.
+                # if new_key == "lm_head.weight" and self.model_args.enable_weight_tying:
+                #     continue
                 hf_state_dict[new_key] = value
 
         return hf_state_dict
@@ -120,6 +162,15 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
 
         state_dict = {}
         expert_weights_by_layer = {}  # {layer: {abstract_key: {expert_id: tensor}}}
+
+        n_heads = self.model_args.n_heads
+        n_kv_heads = (
+            self.model_args.n_kv_heads
+            if self.model_args.n_kv_heads is not None
+            else n_heads
+        )
+        dim = self.model_args.dim
+        head_dim = self.model_args.head_dim
 
         for key, value in hf_state_dict.items():
             if "mlp.experts" in key:
@@ -159,6 +210,14 @@ class Qwen3StateDictAdapter(MoEStateDictAdapter):
                 abstract_key = re.sub(r"(\d+)", "{}", key, count=1)
                 layer_num = re.search(r"\d+", key).group(0)
                 new_key = self.from_hf_map[abstract_key]
+
+                # We need to permute the weights in wq and wk layer in order to account for the difference between
+                # the native Llama and huggingface RoPE implementation.
+                if abstract_key == "model.layers.{}.self_attn.q_proj.weight":
+                    value = value
+                if abstract_key == "model.layers.{}.self_attn.k_proj.weight":
+                    value = value
+
                 new_key = new_key.format(layer_num)
                 state_dict[new_key] = value
 
