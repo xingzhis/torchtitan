@@ -3,7 +3,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # Path to the newly converted checkpoint
 # model_path = "/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/Transformer-Dispersion/pretrain_qwen3_0.6B_ckpts/step-29610"
-model_path = "/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/Transformer-Dispersion/pretrain_qwen3_0.6B_ckpts/step-29460"
+# model_path = "/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/Transformer-Dispersion/pretrain_qwen3_0.6B_ckpts/step-29460"
+# model_path = "/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/Transformer-Dispersion/test_distcp_merging_huggingface_no_merge/step-29460"
+# model_path = "/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/Transformer-Dispersion/test_distcp_merged_hf/step-29460/"
+model_path = "/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/Transformer-Dispersion/test_distcp_merged_hf/step-29460/"
 
 print(f"Loading model from {model_path}...")
 
