@@ -173,7 +173,13 @@ def parallelize_qwen3(
             enable_compiled_autograd=job_config.parallelism.enable_compiled_autograd,
         )
 
-    # Enable weight tying after applying parallelisms
+    # NOTE: Weight tying attempted here, but does NOT actually work with FSDP.
+    # By this point, FSDP has already wrapped both tok_embeddings and output as separate
+    # parameters in its internal state. The assignment below does not properly tie weights
+    # in FSDP's view - they remain independent parameters during training.
+    # Checkpoints contain separate tok_embeddings.weight and output.weight (~311 MB overhead).
+    # See WEIGHT_TYING_ISSUE.md for full details and fix options.
+    # TODO: To properly enable weight tying, this must happen BEFORE FSDP wrapping.
     if model.model_args.enable_weight_tying:
         model.output.weight = model.tok_embeddings.weight
 

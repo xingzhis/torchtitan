@@ -41,7 +41,7 @@ qwen3_args = {
         qk_norm=True,
         hidden_dim=3072,
         rope_theta=1000000,
-        enable_weight_tying=True,
+        enable_weight_tying=True,  # NOTE: Currently not functional - see WEIGHT_TYING_ISSUE.md
     ),
     "0.6B": Qwen3ModelArgs(
         vocab_size=151936,
@@ -54,7 +54,7 @@ qwen3_args = {
         qk_norm=True,
         hidden_dim=3072,
         rope_theta=1000000,
-        enable_weight_tying=True,
+        enable_weight_tying=True,  # NOTE: Currently not functional - see WEIGHT_TYING_ISSUE.md
     ),
     "1.7B": Qwen3ModelArgs(
         vocab_size=151936,
@@ -67,7 +67,7 @@ qwen3_args = {
         qk_norm=True,
         hidden_dim=6144,
         rope_theta=1000000,
-        enable_weight_tying=True,
+        enable_weight_tying=True,  # NOTE: Currently not functional - see WEIGHT_TYING_ISSUE.md
     ),
     "4B": Qwen3ModelArgs(
         vocab_size=151936,
@@ -80,7 +80,7 @@ qwen3_args = {
         qk_norm=True,
         hidden_dim=9728,
         rope_theta=1000000,
-        enable_weight_tying=True,
+        enable_weight_tying=True,  # NOTE: Currently not functional - see WEIGHT_TYING_ISSUE.md
     ),
     "8B": Qwen3ModelArgs(
         vocab_size=151936,
