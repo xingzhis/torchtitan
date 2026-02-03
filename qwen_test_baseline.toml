@@ -1,6 +1,6 @@
 [job]
-dump_folder = "./outputs/qwen_smollm"
-description = "Qwen 3 small model training on SmolLM"
+dump_folder = "./outputs/qwen_test"
+description = "Qwen 3 small model training on test dataset"
 
 [profiling]
 enable_profiling = false
@@ -22,7 +22,7 @@ hf_assets_path = "./assets/hf/Qwen3-0.6B"
 name = "AdamW"
 lr = 3e-4
 eps = 1e-8
-wd = 0.1
+weight_decay = 0.1
 
 [lr_scheduler]
 warmup_steps = 200
@@ -36,11 +36,11 @@ seq_len = 4096
 max_norm = 1.0
 steps = 2320  # Chinchilla optimal for width_256 (approx)
 enable_cpu_offload = false
-dataset = "smollm"
+dataset = "c4_test"
 dtype = "bfloat16"
 
 [parallelism]
-data_parallel_replicate_degree = 4  # Assuming 4 GPUs for test, adjust as needed
+data_parallel_replicate_degree = 2  # Assuming 4 GPUs for test, adjust as needed
 data_parallel_shard_degree = -1
 fsdp_reshard_after_forward = "default"
 tensor_parallel_degree = 1
@@ -48,9 +48,9 @@ context_parallel_degree = 1
 
 [checkpoint]
 enable = true
-folder = "checkpoint_smollm"
+folder = "checkpoint_test"
 interval = 500
-keep_latest_k = 1
+keep_latest_k = 10
 last_save_model_only = false
 export_dtype = "bfloat16"
 async_mode = "disabled"
