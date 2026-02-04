@@ -83,6 +83,11 @@ DATASETS = {
         loader=lambda path: load_from_disk(path),
         sample_processor=_process_fineweb_edu_text,
     ),
+    "fineweb_edu_dedup_full": DatasetConfig(
+        path="./local_datasets/fineweb_edu_dedup_full_shuffled",
+        loader=lambda path: load_from_disk(path),
+        sample_processor=_process_fineweb_edu_text,
+    ),
 }
 
 
