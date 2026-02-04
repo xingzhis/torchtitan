@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 import torch
 
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, load_from_disk
 from datasets.distributed import split_dataset_by_node
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.utils.data import IterableDataset
@@ -38,6 +38,11 @@ def _load_wikitext_dataset(dataset_path: str, split: str):
 
 def _process_wikitext_text(sample: dict[str, Any]) -> str:
     """Process WikiText dataset sample text."""
+    return sample["text"]
+
+
+def _process_fineweb_edu_text(sample: dict[str, Any]) -> str:
+    """Process fineweb-edu sample text."""
     return sample["text"]
 
 
@@ -72,6 +77,11 @@ DATASETS = {
         path="Salesforce/wikitext",
         loader=partial(_load_wikitext_dataset, split="test"),
         sample_processor=_process_wikitext_text,
+    ),
+    "fineweb_edu": DatasetConfig(
+        path="./local_datasets/fineweb_edu_10B_shuffled",
+        loader=lambda path: load_from_disk(path),
+        sample_processor=_process_fineweb_edu_text,
     ),
 }
 

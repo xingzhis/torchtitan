@@ -1,6 +1,6 @@
 [job]
-dump_folder = "./outputs/qwen_test_dispersion"
-description = "Qwen 3 small model training on test dataset"
+dump_folder = "./outputs/qwen_test"
+description = "Qwen 3 0.6B training on 10B tokens"
 
 [profiling]
 enable_profiling = false
@@ -8,14 +8,14 @@ save_traces_folder = "profile_trace"
 profile_freq = 100
 
 [metrics]
-log_freq = 1
+log_freq = 10
 enable_tensorboard = false
 enable_wandb = true
 save_tb_folder = "tb"
 
 [model]
 name = "qwen3"
-flavor = "width_256"
+flavor = "0.6B"
 hf_assets_path = "./assets/hf/Qwen3-0.6B"
 
 [optimizer]
@@ -25,22 +25,22 @@ eps = 1e-8
 weight_decay = 0.1
 
 [lr_scheduler]
-warmup_steps = 100
+warmup_steps = 500 # ~5% of steps, standard for stability
 decay_type = "cosine"
 min_lr_factor = 0.1
 
 [training]
 local_batch_size = 4
-global_batch_size = 128  # [NOTE] Adjust based on num GPUs, need to be multiple of local_batch_size * data_parallel_replicate_degree
+global_batch_size = 256  # 1M tokens per step, efficient for 0.6B model
 seq_len = 4096
 max_norm = 1.0
-steps = 2480  # Chinchilla optimal: 1.3B tokens / (8 batch * 4096 seq_len) = 39675 steps
+steps = 9537  # 10B tokens / (256 batch * 4096 seq) = 9536.7 steps
 enable_cpu_offload = false
 dataset = "fineweb_edu"
 dtype = "bfloat16"
 
 [parallelism]
-data_parallel_replicate_degree = 2  # [NOTE] Need to be the same as NGPU
+data_parallel_replicate_degree = 2  # Assuming 4 GPUs for test, adjust as needed
 data_parallel_shard_degree = -1
 fsdp_reshard_after_forward = "default"
 tensor_parallel_degree = 1
@@ -48,7 +48,7 @@ context_parallel_degree = 1
 
 [checkpoint]
 enable = true
-folder = "checkpoint"
+folder = "checkpoint_test"
 interval = 500
 keep_latest_k = 10
 last_save_model_only = false
@@ -67,10 +67,3 @@ components = ["model", "loss"]
 enable_fsdp_float8_all_gather = false
 precompute_float8_dynamic_scale_for_fsdp = false
 filter_fqns = ["output"]
-
-[dispersion]
-variant = "angular_spread"
-dispersion_coeff = 1.0
-dispersion_loc = "all"
-tau_l2 = 1.0
-tau_cos = 1.0
