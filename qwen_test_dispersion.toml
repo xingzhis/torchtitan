@@ -48,7 +48,7 @@ context_parallel_degree = 1
 
 [checkpoint]
 enable = true
-folder = "checkpoint_test_dispersion"
+folder = "checkpoint"
 interval = 500
 keep_latest_k = 10
 last_save_model_only = false
