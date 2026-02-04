@@ -30,7 +30,7 @@ decay_type = "cosine"
 min_lr_factor = 0.1
 
 [training]
-local_batch_size = 4
+local_batch_size = 4 # works for 40GB A100, if 80GB, try 8
 global_batch_size = 128  # Safe baseline for 60M model 
 seq_len = 4096
 max_norm = 1.0
