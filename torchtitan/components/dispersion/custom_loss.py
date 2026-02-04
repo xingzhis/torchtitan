@@ -96,9 +96,9 @@ class DispersionLossWrapper:
     def get_metrics(self) -> dict:
         """Get current loss metrics for logging."""
         return {
-            "train/ce_loss": self.last_ce_loss,
-            "train/dispersion_loss": self.last_dispersion_loss,
-            "train/total_loss": self.last_ce_loss + self.dispersion_coeff * self.last_dispersion_loss,
+            "loss_metrics/ce_loss": self.last_ce_loss,
+            "loss_metrics/dispersion_loss": self.last_dispersion_loss,
+            "loss_metrics/total_with_dispersion_loss": self.last_ce_loss + self.dispersion_coeff * self.last_dispersion_loss,
         }
     
     def no_rescale(self):

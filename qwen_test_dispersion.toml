@@ -1,0 +1,76 @@
+[job]
+dump_folder = "./outputs/qwen_test_dispersion"
+description = "Qwen 3 small model training on test dataset"
+
+[profiling]
+enable_profiling = false
+save_traces_folder = "profile_trace"
+profile_freq = 100
+
+[metrics]
+log_freq = 1
+enable_tensorboard = false
+enable_wandb = true
+save_tb_folder = "tb"
+
+[model]
+name = "qwen3"
+flavor = "width_256"
+hf_assets_path = "./assets/hf/Qwen3-0.6B"
+
+[optimizer]
+name = "AdamW"
+lr = 3e-4
+eps = 1e-8
+weight_decay = 0.1
+
+[lr_scheduler]
+warmup_steps = 200
+decay_type = "cosine"
+min_lr_factor = 0.1
+
+[training]
+local_batch_size = 4
+global_batch_size = 8  # [NOTE] Adjust based on num GPUs, need to be multiple of local_batch_size * data_parallel_replicate_degree
+seq_len = 4096
+max_norm = 1.0
+steps = 2320  # Chinchilla optimal for width_256 (approx)
+enable_cpu_offload = false
+dataset = "c4_test"
+dtype = "bfloat16"
+
+[parallelism]
+data_parallel_replicate_degree = 2  # [NOTE] Need to be the same as NGPU
+data_parallel_shard_degree = -1
+fsdp_reshard_after_forward = "default"
+tensor_parallel_degree = 1
+context_parallel_degree = 1
+
+[checkpoint]
+enable = true
+folder = "checkpoint_test_dispersion"
+interval = 500
+keep_latest_k = 10
+last_save_model_only = false
+export_dtype = "bfloat16"
+async_mode = "disabled"
+
+[activation_checkpoint]
+mode = "selective"
+selective_ac_option = "op"
+
+[compile]
+enable = false
+components = ["model", "loss"]
+
+[quantize.linear.float8]
+enable_fsdp_float8_all_gather = false
+precompute_float8_dynamic_scale_for_fsdp = false
+filter_fqns = ["output"]
+
+[dispersion]
+variant = "angular_spread"
+dispersion_coeff = 1.0
+dispersion_loc = "all"
+tau_l2 = 1.0
+tau_cos = 1.0

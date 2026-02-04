@@ -67,7 +67,12 @@ class DispersionLoss(torch.nn.Module):
             # NOTE: The distance matrix matrix `D` has shape [B, L, L].
             z_norm = z / (torch.linalg.norm(z, dim=2, keepdim=True) + self.epsilon)
             cossim = z_norm @ rearrange(z_norm, 'b l f -> b f l')
-            cossim = torch.clamp(cossim, -1 + self.epsilon, 1 - self.epsilon)
+            
+            # NOTE: bfloat16 has low precision, 1.0 - 1e-4 rounds to 1.0. 
+            # We use a larger epsilon (1e-2) here to ensure numerical stability for arccos.
+            cossim_eps = 1e-2
+            cossim = torch.clamp(cossim, -1 + cossim_eps, 1 - cossim_eps)
+            
             D = torch.arccos(cossim) / torch.pi
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
             logit = -D[:, non_diag] / self.tau_cos
