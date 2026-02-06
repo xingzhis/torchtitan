@@ -43,3 +43,10 @@ local_datasets
 *.err
 *.log
 *.out
+
+eval/test_results*
+eval/baseline
+eval/dispersion*
+config/sweep
+*.tar.gz
+plan.md
