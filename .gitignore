@@ -50,3 +50,4 @@ eval/dispersion*
 config/sweep
 *.tar.gz
 plan.md
+outputs_archive

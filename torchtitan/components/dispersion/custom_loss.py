@@ -25,11 +25,13 @@ class DispersionLossWrapper:
         dispersion_loc: str = "all",
         tau_l2: float = 0.5,
         tau_cos: float = 0.5,
+        accumulation_steps: int = 1,
     ):
         self.base_loss_fn = base_loss_fn
         self.variant = variant
         self.dispersion_coeff = dispersion_coeff
         self.dispersion_loc = dispersion_loc
+        self.accumulation_steps = accumulation_steps
         
         # Check if dispersion is enabled
         self.use_disp = variant is not None and dispersion_coeff > 0.0
@@ -75,17 +77,22 @@ class DispersionLossWrapper:
     ) -> torch.Tensor:
         """Compute loss with optional dispersion component."""
         ce_loss = self.base_loss_fn(pred, labels)
-        
+
         # Add dispersion only if training and enabled
         if self.use_disp and is_training and self.hidden_states is not None:
             disp_loss = self.disperse_hidden_states(self.hidden_states)
-            total_loss = ce_loss + self.dispersion_coeff * disp_loss
-            
-            self.last_ce_loss = ce_loss.detach().item()
+            # Fix: divide disp_loss by accumulation_steps to match the
+            # rescaled CE from RescaleAccumulatedLoss, so both terms
+            # contribute symmetrically to the accumulated gradient.
+            total_loss = ce_loss + self.dispersion_coeff * disp_loss / self.accumulation_steps
+
+            # Fix: log unscaled CE (undo the 1/N rescaling) so the metric
+            # is comparable to baseline's global_avg_loss.
+            self.last_ce_loss = ce_loss.detach().item() * self.accumulation_steps
             self.last_dispersion_loss = disp_loss.detach().item()
         else:
             total_loss = ce_loss
-            self.last_ce_loss = ce_loss.detach().item()
+            self.last_ce_loss = ce_loss.detach().item() * self.accumulation_steps
             self.last_dispersion_loss = 0.0
         
         # Clear hidden states for next iteration

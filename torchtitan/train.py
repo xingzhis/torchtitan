@@ -280,6 +280,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 dispersion_loc=job_config.dispersion.dispersion_loc,
                 tau_l2=job_config.dispersion.tau_l2,
                 tau_cos=job_config.dispersion.tau_cos,
+                accumulation_steps=self.gradient_accumulation_steps,
             )
             
             # Register hooks to capture hidden states
