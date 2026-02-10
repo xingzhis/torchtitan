@@ -898,6 +898,9 @@ class DispersionConfig:
     tau_cos: float = 0.5
     """Temperature parameter for angular_spread variant"""
 
+    max_tokens: int = 256
+    """Max tokens to subsample per layer for dispersion loss. When L > max_tokens, randomly samples max_tokens tokens to reduce O(L^2) cost. 0 to disable subsampling."""
+
 
 @dataclass
 class JobConfig:

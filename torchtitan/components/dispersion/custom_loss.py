@@ -25,6 +25,7 @@ class DispersionLossWrapper:
         dispersion_loc: str = "all",
         tau_l2: float = 0.5,
         tau_cos: float = 0.5,
+        max_tokens: int = 256,
         accumulation_steps: int = 1,
     ):
         self.base_loss_fn = base_loss_fn
@@ -32,15 +33,16 @@ class DispersionLossWrapper:
         self.dispersion_coeff = dispersion_coeff
         self.dispersion_loc = dispersion_loc
         self.accumulation_steps = accumulation_steps
-        
+
         # Check if dispersion is enabled
         self.use_disp = variant is not None and dispersion_coeff > 0.0
-        
+
         if self.use_disp:
             self.disp_loss_fn = DispersionLoss(
                 variant=variant,
                 tau_l2=tau_l2,
                 tau_cos=tau_cos,
+                max_tokens=max_tokens,
             )
             logger.info(
                 f"[DispersionLoss] Enabled: variant={variant}, "
