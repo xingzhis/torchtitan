@@ -49,16 +49,8 @@ def build_model_args(args, dtype: str, parallelize: bool, model_id: str) -> str:
         parts.append(f"token={args.hf_token.strip()}")
     if parallelize:
         parts.append("parallelize=True")
-        # lm_eval's HF backend creates input tensors on `self.device` (often cuda:0),
-        # but `device_map='auto'` can place embeddings on another GPU, causing:
-        #   Expected all tensors to be on the same device ... index is on cuda:0 ... cuda:1
-        #
-        # Default to a sequential map so early modules (incl. embeddings) stay on cuda:0.
-        # You can override via --device_map.
-        if getattr(args, "device_map", None):
-            parts.append(f"device_map={args.device_map}")
-        else:
-            parts.append("device_map=sequential")
+        # Avoid multi-GPU device mismatch: inputs on cuda:0, embeddings on cuda:1.
+        parts.append("device_map=sequential")
     return ",".join(parts)
 
 
@@ -99,11 +91,8 @@ def run_eval(args, model_id: str, output_dir: str, log_path: str):
     if parallelize is None:
         parallelize = torch.cuda.is_available() and torch.cuda.device_count() > 1
 
-    # When parallelize=True, use "cuda" (not a specific GPU) to avoid device conflicts
-    eval_device = device
-    if parallelize and device.startswith("cuda"):
-        eval_device = "cuda"
-
+    # When parallelize=True, use "cuda" so inputs match model device placement.
+    eval_device = "cuda" if (parallelize and device.startswith("cuda")) else device
     model_args = build_model_args(args, dtype, parallelize, model_id)
 
     log("=== LMEval (pretrained) ===", filepath=log_path)
@@ -185,7 +174,7 @@ def main():
                     help="Path to log file (default: <output_dir>/log.txt).")
     ap.add_argument("--checkpoint_dir", type=str,
                     default="./qwen3_0.6B_dispersion_huggingface",
-                    help="Model directory to evaluate. Can be: (1) a single HF model directory, or (2) a directory containing step-* checkpoint subdirectories.")
+                    help="Directory containing step-* checkpoints to evaluate.")
     ap.add_argument("--num_fewshot", type=int, default=5)
     ap.add_argument("--max_eval_samples", type=int, default=200)
     ap.add_argument("--context_len", type=int, default=4096,
@@ -200,14 +189,6 @@ def main():
                     choices=["auto", "float16", "bfloat16", "float32"])
     ap.add_argument("--parallelize", action="store_true", default=None,
                     help="Enable model parallelism across GPUs.")
-    ap.add_argument(
-        "--device_map",
-        type=str,
-        default=None,
-        help="HF Accelerate device_map to use when --parallelize is enabled "
-        "(e.g. auto, sequential, balanced, balanced_low_0). "
-        "Default: sequential (to avoid multi-GPU input/embedding device mismatch).",
-    )
     ap.add_argument("--zeroshot_tasks", type=str, nargs="+",
                     default=[
                         "anli",
@@ -218,32 +199,16 @@ def main():
                         "piqa",
                         "truthfulqa_mc2",
                         "winogrande",
-                        # Additional tasks (commented out - uncomment to enable):
-                        "lambada_openai",
-                        # "boolq",
-                        # "copa",
-                        # "rte",
-                        # "wsc",
-                        # "sciq",
-                        # "wikitext",
                     ])
     ap.add_argument("--fewshot_tasks", type=str, nargs="+",
                     default=[
                         "arc_challenge",
                         "arc_easy",
-                        # "mathqa",  # Disabled: HF datasets no longer supports dataset scripts (math_qa.py).
+                        # "mathqa", # Disabled: HF datasets no longer supports dataset scripts (math_qa.py).
                         "mmlu",
                         "medmcqa",
-                        # Additional tasks (commented out - uncomment to enable):
-                        # "gsm8k",
-                        # "race",
                     ])
     args = ap.parse_args()
-
-    # Convert relative paths to absolute paths
-    args.checkpoint_dir = os.path.abspath(args.checkpoint_dir)
-    if args.output_dir:
-        args.output_dir = os.path.abspath(args.output_dir)
 
     model_str = args.model_name.replace("/", "-")
     args.dataset_name = "Salesforce/wikitext"
@@ -255,19 +220,20 @@ def main():
     args.tau_cos = 1.0
     args.tau_l2 = 1.0
     if args.output_dir is None:
-        args.output_dir = os.path.abspath(f'./results/pretrain_{model_str}_{"-".join(args.dataset_name.split("/"))}_lr-{args.lr}_token-{args.train_tokens}_disp-{args.dispersion}-{args.dispersion_coeff}-{args.dispersion_loc}-tau_cos-{args.tau_cos}-tau_l2-{args.tau_l2}_fewshot-{args.num_fewshot}_maxsample-{args.max_eval_samples}_seed-{args.seed}')
+        args.output_dir = f'./results/pretrain_{model_str}_{"-".join(args.dataset_name.split("/"))}_lr-{args.lr}_token-{args.train_tokens}_disp-{args.dispersion}-{args.dispersion_coeff}-{args.dispersion_loc}-tau_cos-{args.tau_cos}-tau_l2-{args.tau_l2}_fewshot-{args.num_fewshot}_maxsample-{args.max_eval_samples}_seed-{args.seed}'
+
+    args.checkpoint_dir = os.path.abspath(args.checkpoint_dir)
+    if args.output_dir is not None:
+        args.output_dir = os.path.abspath(args.output_dir)
 
     checkpoints = list_checkpoints(args.checkpoint_dir)
 
-    # If no step-* checkpoints found, treat checkpoint_dir as a single model
     if not checkpoints:
-        log(f"No step-* subdirectories found in {args.checkpoint_dir}")
-        log(f"Treating as single model directory")
+        # Single model directory (no step-* subdirs).
         output_dir = args.output_dir
         log_path = resolve_log_path(args.log_path, output_dir, "model")
         run_eval(args, args.checkpoint_dir, output_dir, log_path)
     else:
-        log(f"Found {len(checkpoints)} checkpoints to evaluate")
         for _, checkpoint_name, checkpoint_path in checkpoints:
             output_dir = os.path.join(args.output_dir, checkpoint_name)
             log_path = resolve_log_path(args.log_path, output_dir, checkpoint_name)
