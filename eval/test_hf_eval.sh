@@ -49,6 +49,7 @@ echo "==========================================="
 # Reproducible eval: use original script and its defaults (num_fewshot=5, max_eval_samples=200, max_gen_tokens=1024, seed=1).
 python eval_hf_original.py \
     --model_name "$MODEL_PATH" \
+    --dtype "bfloat16" \
     --checkpoint_dir "$MODEL_PATH" \
     --output_dir "$OUTPUT_DIR" \
     --parallelize

@@ -51,3 +51,6 @@ config/sweep
 *.tar.gz
 plan.md
 outputs_archive
+
+old/
+configs/sweep/

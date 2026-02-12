@@ -74,3 +74,4 @@ dispersion_coeff = 1.0
 dispersion_loc = "all"
 tau_l2 = 1.0
 tau_cos = 1.0
+max_tokens = 256
