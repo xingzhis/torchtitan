@@ -54,3 +54,4 @@ outputs_archive
 
 old/
 configs/sweep/
+configs/sweep_generated/
