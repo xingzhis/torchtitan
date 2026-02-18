@@ -1,4 +1,48 @@
 #!/usr/bin/env python
+"""Generate Qwen3 training sweep configs with Chinchilla-optimal schedules.
+
+Quick start (local 2x A100-40GB test):
+    python tools/generate_sweep_configs.py --models 0.6B --tag test \\
+        --gpu-memory-gb 40 --available-gpus 2
+
+Migrating to a large HPC cluster (e.g. 128x H100-80GB):
+    python tools/generate_sweep_configs.py --tag full_sweep \\
+        --gpu-memory-gb 80 --available-gpus 128
+
+Key flags to adjust per-cluster:
+    --gpu-memory-gb     Per-GPU memory in GB (default: 80 for H100).
+                        Controls auto-estimated local_batch_size.
+                        Set to 40 for A100-40GB, 80 for A100-80GB / H100.
+    --available-gpus    Total GPUs you can allocate. Caps the DP degree
+                        (accounting for TP) so configs don't request more
+                        GPUs than you have. If omitted, uses conservative
+                        per-model defaults from MODEL_SIZE_MAX_GPU_DEFAULTS.
+    --local-batch-size  Override auto-estimated LBS (e.g. if you know your
+                        GPU can handle a specific size from prior runs).
+    --global-batch-size Override GBS across all models.
+    --models            Comma-separated subset, e.g. "0.6B,1.7B" to skip
+                        larger models you can't run yet.
+    --tokens-per-param  Chinchilla multiplier (default: 20).
+    --dry-run           Print configs without writing files.
+
+What the script auto-computes:
+    - local_batch_size: largest power-of-2 that fits in GPU memory
+      (analytical estimate from model arch + FSDP sharding + optimizer states
+      + activation memory including output logits and loss workspace).
+    - dp_degree: largest DP that keeps grad_accum <= target (default 4).
+    - tensor_parallel_degree: from MODEL_TP_DEGREE (TP=2 for 14B, TP=4 for 32B).
+    - training steps + warmup: Chinchilla-optimal from instantiated param count.
+    - checkpoint interval: ~20 saves per run, clamped to [250, 2000].
+
+Example: same model set, different clusters:
+    # 4x A100-40GB workstation
+    python tools/generate_sweep_configs.py --models 0.6B,1.7B \\
+        --available-gpus 4 --gpu-memory-gb 40 --tag workstation
+
+    # 256x H100-80GB HPC partition
+    python tools/generate_sweep_configs.py \\
+        --available-gpus 256 --gpu-memory-gb 80 --tag hpc_run
+"""
 import argparse
 import copy
 import math
