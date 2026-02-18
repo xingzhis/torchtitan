@@ -60,7 +60,7 @@ mode = "selective"
 selective_ac_option = "op"
 
 [compile]
-enable = false
+enable = true
 components = ["model", "loss"]
 
 [quantize.linear.float8]

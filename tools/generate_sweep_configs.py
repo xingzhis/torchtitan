@@ -79,6 +79,104 @@ class BatchPlan:
     grad_accum_steps: int
 
 
+def estimate_max_local_batch_size(
+    model_name: str,
+    seq_len: int,
+    dp_degree: int,
+    tp_degree: int,
+    gpu_memory_gb: float,
+    safety_margin: float = 0.70,
+) -> tuple[int, dict[str, float]]:
+    """Estimate the largest local batch size that fits in GPU memory.
+
+    Uses analytical memory model:
+      - Parameters (FSDP-sharded, bf16): params / dp / tp * 2 bytes
+      - Gradients (same shard): params / dp / tp * 2 bytes
+      - Optimizer states (AdamW fp32 copy + momentum + variance): params / dp / tp * 12 bytes
+      - Activations per sample (selective AC "op" mode):
+          * Per-layer: 2 * seq_len * dim (attention + FFN residuals, bf16)
+                       + seq_len * hidden_dim/tp (FFN intermediate, bf16)
+          * Output logits: seq_len * vocab_size * 2 bytes (the dominant cost!)
+          * Loss / cross-entropy workspace: ~seq_len * vocab_size * 4 bytes (fp32 softmax)
+
+    Returns (max_lbs, breakdown_gb) where max_lbs is the largest power-of-2 batch size
+    that fits, and breakdown_gb is a dict of memory components in GB for diagnostics.
+    """
+    model_args = qwen3_args[model_name]
+    nparams = APPROX_PARAM_FALLBACK.get(model_name, 1_000_000_000)
+    try:
+        nparams = _count_params_from_instantiated_model(model_name, "off")
+    except Exception:
+        pass
+
+    shard_factor = dp_degree * tp_degree
+    bytes_per_bf16 = 2
+
+    # Sharded parameter memory
+    param_mem = nparams / shard_factor * bytes_per_bf16
+    # Sharded gradient memory
+    grad_mem = nparams / shard_factor * bytes_per_bf16
+    # Sharded optimizer states: fp32 param copy (4B) + momentum (4B) + variance (4B) = 12B
+    opt_mem = nparams / shard_factor * 12
+
+    fixed_mem = param_mem + grad_mem + opt_mem
+
+    dim = model_args.dim
+    hidden_dim = model_args.hidden_dim
+    n_layers = model_args.n_layers
+    vocab_size = model_args.vocab_size
+
+    # Per-layer activations kept under selective AC:
+    #   2 * seq_len * dim (attention + FFN input residuals, bf16)
+    #   + seq_len * hidden_dim/tp (FFN gate/up intermediate, bf16, sharded by TP)
+    act_per_layer = seq_len * (2 * dim + hidden_dim // tp_degree) * bytes_per_bf16
+    layer_act_per_sample = n_layers * act_per_layer
+
+    # Output logits: (seq_len, vocab_size) in bf16 — this is often the largest single
+    # allocation.  For Qwen3 vocab_size=151936, seq_len=4096: ~1.16 GB per sample.
+    logits_per_sample = seq_len * vocab_size * bytes_per_bf16
+
+    # Cross-entropy loss workspace: softmax computed in fp32 over vocab dim.
+    # PyTorch keeps the fp32 softmax output for backward: seq_len * vocab_size * 4 bytes.
+    loss_workspace_per_sample = seq_len * vocab_size * 4
+
+    act_per_sample = layer_act_per_sample + logits_per_sample + loss_workspace_per_sample
+
+    usable_mem = gpu_memory_gb * (1024 ** 3) * safety_margin
+    available_for_act = usable_mem - fixed_mem
+
+    if available_for_act <= 0:
+        return 1, {
+            "params_gb": param_mem / 1e9,
+            "grads_gb": grad_mem / 1e9,
+            "optim_gb": opt_mem / 1e9,
+            "act_per_sample_gb": act_per_sample / 1e9,
+            "logits_per_sample_gb": logits_per_sample / 1e9,
+            "usable_gb": usable_mem / 1e9,
+        }
+
+    max_samples = int(available_for_act / act_per_sample)
+    # Round down to largest power of 2
+    if max_samples <= 0:
+        lbs = 1
+    else:
+        lbs = 1 << (max_samples.bit_length() - 1)
+    lbs = max(1, lbs)
+
+    breakdown = {
+        "params_gb": param_mem / 1e9,
+        "grads_gb": grad_mem / 1e9,
+        "optim_gb": opt_mem / 1e9,
+        "act_per_sample_gb": act_per_sample / 1e9,
+        "layer_act_gb": layer_act_per_sample / 1e9,
+        "logits_gb": logits_per_sample / 1e9,
+        "loss_ws_gb": loss_workspace_per_sample / 1e9,
+        "usable_gb": usable_mem / 1e9,
+        "max_samples_exact": max_samples,
+    }
+    return lbs, breakdown
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate Qwen3 sweep configs without submitting jobs."
@@ -157,6 +255,12 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "on", "off"],
         default="off",
         help="Whether parameter counting assumes tied embeddings. 'off' matches untied bug behavior.",
+    )
+    parser.add_argument(
+        "--gpu-memory-gb",
+        type=float,
+        default=80.0,
+        help="Per-GPU memory in GB. Used to auto-estimate max local batch size.",
     )
     parser.add_argument(
         "--output-root",
@@ -467,11 +571,6 @@ def main() -> None:
         template_defaults = read_template_defaults(baseline_template)
         model_defaults = MODEL_DEFAULTS[model_name]
 
-        local_batch_size = int(
-            args.local_batch_size
-            if args.local_batch_size > 0
-            else model_defaults.get("local_batch_size", template_defaults["local_batch_size"])
-        )
         global_batch_size = int(
             args.global_batch_size
             if args.global_batch_size > 0
@@ -487,6 +586,39 @@ def main() -> None:
 
         # DP can only use GPUs not consumed by tensor parallelism.
         dp_gpu_cap = effective_gpu_cap // tp_degree
+
+        # Determine local batch size: CLI override > auto-estimate.
+        if args.local_batch_size > 0:
+            local_batch_size = args.local_batch_size
+        else:
+            estimated_lbs, mem_breakdown = estimate_max_local_batch_size(
+                model_name=model_name,
+                seq_len=seq_len,
+                dp_degree=dp_gpu_cap,
+                tp_degree=tp_degree,
+                gpu_memory_gb=args.gpu_memory_gb,
+            )
+            fallback_lbs = model_defaults.get(
+                "local_batch_size", template_defaults["local_batch_size"]
+            )
+            local_batch_size = estimated_lbs
+            print(
+                f"  mem estimate ({args.gpu_memory_gb}GB, 70% usable): "
+                f"params={mem_breakdown['params_gb']:.1f}GB, "
+                f"grads={mem_breakdown['grads_gb']:.1f}GB, "
+                f"optim={mem_breakdown['optim_gb']:.1f}GB, "
+                f"act/sample={mem_breakdown['act_per_sample_gb']:.2f}GB "
+                f"(layers={mem_breakdown.get('layer_act_gb', 0):.2f} + "
+                f"logits={mem_breakdown.get('logits_gb', 0):.2f} + "
+                f"loss_ws={mem_breakdown.get('loss_ws_gb', 0):.2f}), "
+                f"max_samples={mem_breakdown.get('max_samples_exact', '?')}"
+            )
+            if estimated_lbs != fallback_lbs:
+                print(
+                    f"  lbs: {fallback_lbs} (table default) -> {estimated_lbs} (estimated)"
+                )
+
+        local_batch_size = int(local_batch_size)
 
         plan = choose_batch_plan(
             local_batch_size=local_batch_size,

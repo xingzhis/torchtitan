@@ -14,7 +14,7 @@ print("=" * 70)
 from datasets import load_dataset
 
 config = DATASETS['fineweb_edu_dedup_full']
-ds = config.loader('./local_datasets/fineweb_edu_dedup_full_shuffled')
+ds = config.loader('./local_datasets/fineweb_edu_dedup_full')
 sample = next(iter(ds))
 print(f"First sample keys: {list(sample.keys())}")
 print(f"Text preview: {config.sample_processor(sample)[:100]}...")
@@ -25,7 +25,7 @@ print("=" * 70)
 print("Test 3: Verify reproducibility (first 3 samples)")
 print("=" * 70)
 from datasets import load_from_disk
-ds = load_from_disk('./local_datasets/fineweb_edu_dedup_full_shuffled')
+ds = load_from_disk('./local_datasets/fineweb_edu_dedup_full')
 for i, sample in enumerate(ds.take(3)):
     print(f"Sample {i}: {sample['text'][:80]}...")
 print()

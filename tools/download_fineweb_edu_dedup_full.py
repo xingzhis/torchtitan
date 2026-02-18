@@ -18,5 +18,5 @@ ds = load_dataset(
 # ds_shuffled = ds.shuffle(seed=42)
 
 print('Saving to disk...')
-ds_shuffled.save_to_disk('./local_datasets/fineweb_edu_dedup_full_shuffled')
+ds.save_to_disk('./local_datasets/fineweb_edu_dedup_full')
 print('Done!')
