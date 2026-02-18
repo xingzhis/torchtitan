@@ -301,6 +301,14 @@ def parse_args() -> argparse.Namespace:
         help="Whether parameter counting assumes tied embeddings. 'off' matches untied bug behavior.",
     )
     parser.add_argument(
+        "--tp-degree",
+        type=int,
+        default=0,
+        help="Override tensor parallel degree for all models. "
+             "Set to 1 for clusters without NVLink (PCIe only). "
+             "If 0 (default), uses per-model defaults from MODEL_TP_DEGREE.",
+    )
+    parser.add_argument(
         "--gpu-memory-gb",
         type=float,
         default=80.0,
@@ -626,7 +634,7 @@ def main() -> None:
         )
         seq_len = int(template_defaults["seq_len"])
         effective_gpu_cap = resolve_effective_gpu_cap(model_name, args.available_gpus)
-        tp_degree = MODEL_TP_DEGREE.get(model_name, 1)
+        tp_degree = args.tp_degree if args.tp_degree > 0 else MODEL_TP_DEGREE.get(model_name, 1)
 
         # DP can only use GPUs not consumed by tensor parallelism.
         dp_gpu_cap = effective_gpu_cap // tp_degree
