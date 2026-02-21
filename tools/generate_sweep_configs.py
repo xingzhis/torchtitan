@@ -705,13 +705,17 @@ def main() -> None:
             "dataset": args.dataset,
             "local_batch_size": plan.local_batch_size,
             "global_batch_size": plan.global_batch_size,
-            "data_parallel_replicate_degree": plan.dp_degree,
+            "data_parallel_shard_degree": plan.dp_degree,
+            "data_parallel_replicate_degree": 1,
             "tensor_parallel_degree": tp_degree,
             "lr": lr,
             "weight_decay": weight_decay,
             "description": args.description,
             "steps": schedule["steps"],
             "warmup_steps": schedule["warmup_steps"],
+        }
+
+        checkpoint_updates = {
             "interval": ckpt_interval,
             "enable": True,
             "async_mode": "async",
@@ -740,7 +744,12 @@ def main() -> None:
         baseline_cfg_path = os.path.join(config_dir, "baseline.toml")
         baseline_updates = common_updates.copy()
         baseline_updates["dump_folder"] = os.path.join(base_output_dir, "baseline")
-        create_modified_config(baseline_template, baseline_cfg_path, baseline_updates)
+        create_modified_config(
+            baseline_template,
+            baseline_cfg_path,
+            baseline_updates,
+            section_updates={"checkpoint": checkpoint_updates},
+        )
 
         for coeff in DISPERSION_COEFFS:
             disp_cfg_path = os.path.join(config_dir, f"dispersion_{coeff}.toml")
@@ -758,7 +767,10 @@ def main() -> None:
                 baseline_template,
                 disp_cfg_path,
                 disp_updates,
-                section_updates={"dispersion": dispersion_section},
+                section_updates={
+                    "checkpoint": checkpoint_updates,
+                    "dispersion": dispersion_section,
+                },
             )
 
     if args.dry_run:
